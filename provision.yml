@@ -1,0 +1,53 @@
+- hosts: all
+  become: yes
+  tasks:
+      
+      - name: Check if minikube binary is downloaded
+        command: ls /home/vagrant/minikube-linux-amd64
+        register: minikube_downloaded
+        ignore_errors: yes
+
+      - name: Download minikube
+        get_url: 
+           url: https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64 
+           dest: /home/vagrant
+        when: minikube_downloaded is failed
+
+      - name: Check if minikube is installed
+        command: ls /usr/local/bin/minikube
+        register: minikube_installed
+        ignore_errors: yes
+
+      - name: Install minikube
+        copy:
+            src: /home/vagrant/minikube-linux-amd64
+            remote_src: yes
+            dest: /usr/local/bin/minikube
+            owner: root
+            group: root
+            mode: 'u=rwx,go=rx'
+        when: minikube_installed is failed
+      
+      - name: Install prerequisites for Docker repository
+        apt:
+          name: ['apt-transport-https', 'ca-certificates', 'curl', 'gnupg2', 'software-properties-common', 'conntrack', 'net-tools', 'python3-pip', 'python3-setuptools', 'virtualenv']
+          update_cache: yes
+      
+      - name: Add Docker GPG key
+        apt_key:
+          url: https://download.docker.com/linux/ubuntu/gpg
+
+      - name: Add Docker APT repository
+        apt_repository:
+          repo: deb [arch=amd64] https://download.docker.com/{{ ansible_system | lower }}/{{ ansible_distribution | lower }} {{ ansible_distribution_release }} stable
+
+      - name: Install Docker CE and other components
+        apt:
+          name: ['docker-ce', 'docker-ce-cli', 'containerd.io', 'docker-compose-plugin']
+          update_cache: yes
+
+      - name: Add default user to docker group
+        user:
+          name: vagrant
+          groups: docker
+          append: yes
