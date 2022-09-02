@@ -9,25 +9,26 @@
     minikube_bin_url: https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
     cri_download_path: '{{ default_home }}/cri-dockerd'
     cri_repo_url: https://github.com/Mirantis/cri-dockerd.git
+    cri_install_path: /usr/local/bin/cri-dockerd
     go_bin_url: https://storage.googleapis.com/golang/getgo/installer_linux
 
   tasks:
       
     - name: Check if minikube binary is downloaded
-      command: ls {{ default_home }}/minikube-linux-amd64
+      stat: 
+        path: '{{ default_home }}/minikube-linux-amd64'
       register: minikube_downloaded
-      ignore_errors: yes
 
     - name: Download minikube
       get_url: 
         url: '{{ minikube_bin_url }}'
         dest: '{{ default_home }}'
-      when: minikube_downloaded is failed
+      when: not minikube_downloaded.stat.exists
 
     - name: Check if minikube is installed
-      command: ls {{ minikube_install_path }}
+      stat:
+        path: '{{ minikube_install_path }}'
       register: minikube_installed
-      ignore_errors: yes
 
     - name: Install minikube
       copy:
@@ -37,7 +38,7 @@
         owner: root
         group: root
         mode: 'u=rwx,go=rx'
-      when: minikube_installed is failed
+      when: not minikube_installed.stat.exists
     
     - name: Check if Docker is installed
       shell: docker --version
@@ -97,3 +98,62 @@
         dest: '{{ cri_download_path }}'
         clone: yes
         update: yes
+
+    - name: Check if cri-dockerd build dir exists
+      stat:
+        path: '{{ cri_download_path }}/bin'
+      register: cri_build_dir
+
+    - name: Check if cri-dockerd is already built
+      stat:
+        path: '{{ cri_download_path }}/bin/cri-dockerd'
+      register: cri_bin
+
+    - name: Create build directory for cri-dockerd
+      file:
+        path: '{{ cri_download_path }}/bin'
+        state: directory
+        owner: root
+        group: root
+        mode: 'u=rwx,go=rx'
+      when: not cri_build_dir.stat.exists
+
+    - name: Build cri-dockerd
+      shell: go build -o bin/cri-dockerd
+      environment:
+        PATH: "/root/.go/bin:{{ ansible_env.PATH }}"
+      args:
+        chdir: '{{ cri_download_path }}'
+      when: not cri_bin.stat.exists
+      
+    - name: Install cri-dockerd
+      copy:
+        src: '{{ cri_download_path }}/bin/cri-dockerd'
+        remote_src: yes
+        dest: '{{ cri_install_path }}'
+        owner: root
+        group: root
+        mode: 'u=rwx,go=rx'
+
+    - name: Add cri-dockerd systemd service
+      copy:
+        src: '{{ cri_download_path }}/packaging/systemd/'
+        remote_src: yes
+        dest: /etc/systemd/system
+        owner: root
+        group: root
+    
+    - name: Replace a line in the unit file
+      replace:
+        path: /etc/systemd/system/cri-docker.service
+        regexp: '\/usr\/bin\/cri-dockerd'
+        replace: /usr/local/bin/cri-dockerd
+    
+    - name: Reload daemon
+      shell: systemctl daemon-reload
+    
+    - name: Enable cri-dockerd service
+      shell: systemctl enable cri-docker.service
+
+    - name: Enable cri-dockerd socket
+      shell: systemctl enable --now cri-docker.socket
