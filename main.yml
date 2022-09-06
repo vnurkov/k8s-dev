@@ -7,10 +7,11 @@
     default_home: /home/{{ default_user }}
     minikube_install_path: /usr/local/bin/minikube
     minikube_bin_url: https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
+    go_bin_url: https://storage.googleapis.com/golang/getgo/installer_linux
     cri_download_path: '{{ default_home }}/cri-dockerd'
     cri_repo_url: https://github.com/Mirantis/cri-dockerd.git
     cri_install_path: /usr/local/bin/cri-dockerd
-    go_bin_url: https://storage.googleapis.com/golang/getgo/installer_linux
+    crictl_version: v1.24.1
 
   tasks:
       
@@ -157,3 +158,19 @@
 
     - name: Enable cri-dockerd socket
       shell: systemctl enable --now cri-docker.socket
+
+    - name: Download crictl
+      get_url:
+        url: https://github.com/kubernetes-sigs/cri-tools/releases/download/{{ crictl_version }}/crictl-{{ crictl_version }}-linux-amd64.tar.gz
+        dest: '{{ default_home }}'
+        owner: root
+        group: root
+        mode: 'u=rwx,go=rx'
+      register: crictl_downloaded
+
+    - name: Unpack and install crictl
+      unarchive:
+        src: '{{ default_home }}/crictl-{{ crictl_version }}-linux-amd64.tar.gz'
+        dest: /usr/local/bin
+        remote_src: yes
+      register: crictl_installed
