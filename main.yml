@@ -1,6 +1,6 @@
 - hosts: all
+  
   become: yes
-
   vars:
 
     default_user: vagrant
@@ -14,7 +14,7 @@
     crictl_version: v1.24.1
 
   tasks:
-      
+    
     - name: Check if minikube binary is downloaded
       stat: 
         path: '{{ default_home }}/minikube-linux-amd64'
@@ -174,3 +174,16 @@
         dest: /usr/local/bin
         remote_src: yes
       register: crictl_installed
+
+  post_tasks:
+
+    - name: check the status of minikube.
+      shell: minikube status
+      register: minikube_status
+      changed_when: false
+      ignore_errors: true
+
+    - name: start minikube if it's not running.
+      become: no
+      shell: minikube start --driver=none
+      when: "not minikube_status.stdout or 'Running' not in minikube_status.stdout"

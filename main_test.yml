@@ -1,0 +1,95 @@
+- hosts: all
+
+  become: yes
+  vars:
+
+    default_user: vagrant
+    default_home: /home/{{ default_user }}
+    minikube_install_path: /usr/local/bin/minikube
+    minikube_bin_url: https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
+    go_bin_url: https://storage.googleapis.com/golang/getgo/installer_linux
+    cri_download_path: '{{ default_home }}/cri-dockerd'
+    cri_repo_url: https://github.com/Mirantis/cri-dockerd.git
+    cri_install_path: /usr/local/bin/cri-dockerd
+    crictl_version: v1.24.1
+
+  tasks:
+
+    - name: Print the gateway for each host when defined
+      ansible.builtin.debug:
+        msg: System {{ inventory_hostname }} has gateway {{ ansible_default_ipv4.gateway }}
+      when: ansible_default_ipv4.gateway is defined
+    
+    - name: Check if minikube binary is downloaded
+      stat: 
+        path: '{{ default_home }}/minikube-linux-amd64'
+      register: minikube_downloaded
+
+    - name: Download minikube
+      get_url: 
+        url: '{{ minikube_bin_url }}'
+        dest: '{{ default_home }}'
+      when: not minikube_downloaded.stat.exists
+
+    - name: Check if minikube is installed
+      stat:
+        path: '{{ minikube_install_path }}'
+      register: minikube_installed
+
+    - name: Install minikube
+      copy:
+        src: '{{ default_home }}/minikube-linux-amd64'
+        remote_src: yes
+        dest: '{{ minikube_install_path }}'
+        owner: root
+        group: root
+        mode: 'u=rwx,go=rx'
+      when: not minikube_installed.stat.exists
+    
+    - name: Check if Docker is installed
+      shell: docker --version
+      register: docker_installed
+      ignore_errors: yes
+
+    - name: Install prerequisites for Docker repository
+      apt:
+        name: ['apt-transport-https', 'ca-certificates', 'curl', 'gnupg2', 'software-properties-common', 'conntrack', 'net-tools', 'python3-pip', 'python3-setuptools', 'virtualenv']
+        update_cache: yes
+      when: docker_installed is failed
+    
+    - name: Add Docker GPG key
+      apt_key:
+        url: https://download.docker.com/linux/ubuntu/gpg
+      when: docker_installed is failed
+
+    - name: Add Docker APT repository
+      apt_repository:
+        repo: deb [arch=amd64] https://download.docker.com/{{ ansible_system | lower }}/{{ ansible_distribution | lower }} {{ ansible_distribution_release }} stable
+      when: docker_installed is failed
+
+    - name: Install Docker CE and other components
+      apt:
+        name: ['docker-ce', 'docker-ce-cli', 'containerd.io', 'docker-compose-plugin']
+        update_cache: yes
+      when: docker_installed is failed
+
+    - name: Add default user to docker group
+      user:
+        name: '{{ default_user }}'
+        groups: docker
+        append: yes
+      when: docker_installed is failed
+    
+    - name: Download kubectl
+      get_url:
+        url: https://dl.k8s.io/release/v1.25.0/bin/linux/amd64/kubectl
+        dest: '{{ default_home }}'
+    
+    - name: Install kubectl
+      copy:
+        src: '{{ default_home }}/kubectl'
+        remote_src: yes
+        dest: /usr/local/bin/kubectl
+        owner: root
+        group: root
+        mode: 'u=rwx,go=rx'
